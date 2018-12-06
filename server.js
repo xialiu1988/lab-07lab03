@@ -75,18 +75,16 @@ Location.getlocationinfo=(query)=>{
 
 //save info to db
 Location.prototype.save=function(){
-  let SQL=  `INSERT INTO locations
-
-       
+  let SQL= `INSERT INTO locations   
 (search_query,formatted_query,latitude,longitude)
 VALUES($1,$2,$3,$4)
-RETURNING id;
+RETURNING id
 `;
   let values=Object.values(this);
   return client.query(SQL,values);
 
 
-}
+};
 //find info about location from db
 Location.findLocation=(handler)=>{
 
@@ -111,13 +109,14 @@ Location.findLocation=(handler)=>{
 
 //weather constructor
 function Weather(day){
-  this.forcast=day.summary;
-  this.time=new Date(day.time*1000).toString().slice(0,15);
+  this.forecast=day.summary;
+  this.time=new Date(day.time*1000).toDateString();
+
 }
 
 
 function getWeather(request,response){
-  const weatherHandler={
+  const handler={
     location:request.query.data,
     cacheHit:function(result){
       response.send(result.rows);
@@ -130,12 +129,12 @@ function getWeather(request,response){
 
   };
 
-  Weather.findWeather(weatherHandler);
+  Weather.findWeather(handler);
 
 }
 //save weather info to db
 Weather.prototype.save=function(id){
-  const SQL=`INSERT INTO weathers (forecast, time, location_id) VALUES ($1, $2, $3);`;
+  const SQL=`INSERT INTO weathers (forecast,time,location_id) VALUES ($1,$2,$3);`;
   const values=Object.values(this);
   values.push(id);
   client.query(SQL,values);
@@ -162,12 +161,11 @@ Weather.findWeather=function(handler){
 Weather.getWeatherinfo=function(location){
 
   const url=`https://api.darksky.net/forecast/${process.env.WEATHER_API_KEY}/${location.latitude},${location.longitude}`;
-
   return superagent.get(url)
     .then(result=>{
       const weatherSummaries=result.body.daily.data.map(day=>{
 
-        const summary =new Weather(day);
+        const summary = new Weather(day);
         summary.save(location.id);
         return summary;
       });
@@ -179,10 +177,87 @@ Weather.getWeatherinfo=function(location){
 
 
 
+//yelp starts here
+
+app.get('/yelp',getYelp);
+
+//yelp constructor
+
+function Yelp(item){
+  this.name=item.name;
+  this.rating=item.rating;
+  this.price=item.price;
+  //   this.phone=item.phone;
+  this.image_url=item.image_url;
+
+}
+
+
+function getYelp(request,response){
+  const handler={
+    location: request.query.data,
+    cacheHit: function(result){
+      response.send(result.rows);
+    },
+    cacheMiss: function(){
+      Yelp.getYelpinfo(request.query.data)
+        .then(results=>response.send(results))
+        .catch(console.error);
+    },
+
+  };
+
+  Yelp.findYelp(handler);
+
+}
+
+//save to db
+Yelp.prototype.save=function(id){
+  const SQL = `INSERT INTO yelps (name,rating,price,image_url) VALUES ($1,$2,$3,$4);`;
+  const values=Object.values(this);
+  values.push(id);
+  client.query(SQL,values);
+};
+
+
+
+
+Yelp.findYelp=function(handler){
+  const SQL= `SELECT * FROM yelps WHERE name=$1`;
+  client.query(SQL,[handler.location.id])
+    .then(result=>{
+      if(result.rowCount>0){
+        handler.cacheHit(result);
+      }
+      else{
+        handler.cacheMiss();
+      }
+    });
+   
+};
+
+
+Yelp.getYelpinfo=function(location){
+
+  const url= `https://api.yelp.com/v3/businesses/search?location=${location.latitude},${location.longitude}`;
+  return superagent.get(url)
+    .set('Authorization', `Bearer ${process.env.YELP_API_KEY}`)
+    .then(result=>{
+      const yelpSummaries=result.body.businesses.map(item=>{
+
+        const summary =new Yelp(item);
+        summary.save(location.id);
+        return summary;
+      });
+      return yelpSummaries;
+    });
+
+};
+
 
 //error handler
 function handleError(err,res){
-  console.err('ERR',err);
+//   console.err('ERR',err);
   if(res) res.status(500).send('sorry broken ');
 }
 
